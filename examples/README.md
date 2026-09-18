@@ -18,6 +18,20 @@ the point: the READMEs make security claims, and CI is what keeps them true.
 | [02_repo_assistant](02_repo_assistant/) | Argument predicates and the sandbox. Traversal, a symlink escape, and a shell allowlist. |
 | [03_ops_approval](03_ops_approval/) | Human approval on an irreversible call, and a tamper-evident audit trail. |
 
-Three shorter scripts sit alongside them: `01_quickstart.py` and
-`02_injection.py` are single-file walkthroughs, and `03_live.py` runs the
-same agent against the real API with `ANTHROPIC_API_KEY` set.
+`quickstart.py` is the code in the root README, kept here so CI runs it.
+
+## Against the real model
+
+Every example scripts the model so it runs anywhere, deterministically. To
+watch the same policy work against a real one:
+
+```
+pip install 'secure-agents[anthropic]'
+export ANTHROPIC_API_KEY=...
+python examples/01_untrusted_inbox/triage.py
+```
+
+Nothing about the policy, the sandbox or the audit log changes when the model
+becomes real, which is the point of the `Model` protocol. The injection is
+still in the fixture, and whether the model falls for it is now genuinely up
+to the model.

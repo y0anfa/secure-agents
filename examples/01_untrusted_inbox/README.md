@@ -10,6 +10,10 @@ python triage.py
 pytest test_inbox_triage.py
 ```
 
+With `ANTHROPIC_API_KEY` set, `triage.py` runs the same agent against the
+real model instead of the scripted one. The policy, the sandbox and the audit
+log are identical; only whether the model falls for the injection changes.
+
 ## The attack
 
 Open [`messages/msg-002.txt`](messages/msg-002.txt). It is an ordinary
