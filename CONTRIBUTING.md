@@ -74,3 +74,10 @@ pytest examples
 
 Commits explain why, not what; the diff covers what. No generated files by
 hand: regenerate with the tooling.
+
+## Releasing
+
+You almost certainly do not need this, but if you are wondering why there is no
+PyPI token in the repository settings: there is not meant to be one. Releases go
+out through Trusted Publishing, from a tag, and the setup is written down in
+[docs/releasing.md](docs/releasing.md).
