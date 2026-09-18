@@ -1,0 +1,6 @@
+From: dana@acme-customer.example
+Subject: Export is timing out
+
+Our nightly export has been timing out since Tuesday. It used to finish in
+about ten minutes and now it runs for an hour and gives up. Nothing changed
+on our side that we know of. Account id is 4471.
