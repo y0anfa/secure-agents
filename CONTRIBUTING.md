@@ -52,6 +52,38 @@ process is multi-threaded. It currently runs before the tests that start an
 HTTP server thread. If you reorder that file, or add parallel test
 execution, that is the one that breaks.
 
+## Actions are pinned to commit SHAs
+
+Every `uses:` in `.github/workflows/` names a full 40-character commit SHA
+with the version in a trailing comment:
+
+```yaml
+- uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+```
+
+A tag is mutable. Whoever controls an action's repository can move `v4` to
+different code at any time, and it then runs in our CI with a token scoped to
+this repository. A SHA is the only reference that cannot be moved under us.
+This project's whole argument is about bounding what untrusted code can
+reach, so the release process is not the place to make the opposite
+assumption.
+
+Dependabot proposes these updates weekly and rewrites the trailing comment
+along with the SHA, so pinning does not mean going stale. Do not replace a
+SHA with a tag to make an update easier to read.
+
+If you ever resolve one by hand, ask for the commit and not the tag object:
+
+```
+git ls-remote --tags https://github.com/github/codeql-action 'refs/tags/v3^{}'
+```
+
+`github/codeql-action` uses annotated tags, so plain `refs/tags/v3` gives you
+the tag object's SHA. Pinning to that fails at run time with an unresolvable
+action, and the SHA looks entirely correct while it does. `actions/checkout`
+and `actions/setup-python` use lightweight tags, where both forms agree,
+which is what makes the difference easy to miss.
+
 ## Docs and examples
 
 The examples are executable documentation. `pytest examples` runs them, and
