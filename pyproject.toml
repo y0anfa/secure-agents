@@ -33,7 +33,7 @@ anthropic = ["anthropic>=0.40"]
 # The lint toolchain is pinned to a minor range. An unpinned ruff means a
 # release with a new rule or a new formatter target turns CI red on a branch
 # that changed nothing, which is how contributors learn to ignore CI.
-dev = ["pytest>=8", "ruff>=0.16,<0.17", "mypy>=1.11,<2"]
+dev = ["pytest>=8", "ruff>=0.16,<0.17", "mypy>=1.11,<3"]
 
 [project.urls]
 Homepage = "https://github.com/y0anfa/secure-agents"
