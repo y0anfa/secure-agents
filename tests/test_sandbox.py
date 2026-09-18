@@ -1,4 +1,5 @@
 import os
+import sys
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
@@ -7,7 +8,7 @@ import pytest
 from demo_tools import echo, explode, fetch, hog, not_json, peek_env, slow, whoami
 
 from secure_agents import InProcess, SandboxError, Subprocess, ToolError
-from secure_agents.sandbox import Egress, EgressDenied
+from secure_agents.sandbox import Egress, EgressDenied, unenforced_limits
 from secure_agents.tools import Tool
 
 
@@ -47,10 +48,69 @@ def test_a_slow_tool_is_killed(box):
         box.execute(slow, {"seconds": 10}, {})
 
 
+@pytest.mark.skipif(
+    "memory_mb" in unenforced_limits(),
+    reason="this platform accepts RLIMIT_AS and ignores it; see Subprocess.describe()",
+)
 def test_a_greedy_tool_hits_the_memory_limit():
     box = Subprocess(timeout_s=20, memory_mb=128)
     with pytest.raises(SandboxError):
         box.execute(hog, {}, {})
+
+
+# -- honest limits ---------------------------------------------------------
+
+
+def test_describe_names_a_limit_the_platform_will_not_enforce(monkeypatch):
+    """describe() goes into the audit log, so it must not claim a cap that is
+    not in force. Darwin accepts RLIMIT_AS and ignores it."""
+    monkeypatch.setattr(sys, "platform", "darwin")
+    text = Subprocess(memory_mb=512).describe()
+    assert "512MB NOT ENFORCED on darwin" in text
+    # The limits Darwin does honour are still reported plainly.
+    assert "10s cpu," in text
+
+
+def test_describe_claims_a_limit_only_where_it_applies(monkeypatch):
+    monkeypatch.setattr(sys, "platform", "linux")
+    text = Subprocess(memory_mb=512).describe()
+    assert "512MB," in text
+    assert "NOT ENFORCED" not in text
+
+
+def test_unenforced_limits_is_inspectable_per_platform():
+    assert unenforced_limits("darwin") == frozenset({"memory_mb"})
+    assert unenforced_limits("linux") == frozenset()
+
+
+def test_the_unenforced_set_reaches_the_audit_log_through_describe(monkeypatch):
+    monkeypatch.setattr(sys, "platform", "darwin")
+    box = Subprocess()
+    assert box.unenforced == frozenset({"memory_mb"})
+    assert "NOT ENFORCED" in box.describe()
+
+
+def test_a_limit_that_cannot_be_set_discards_the_result(monkeypatch):
+    """Fail closed. Previously a setrlimit failure vanished into a bare
+    except and the tool ran anyway, reported as if fully sandboxed."""
+    import secure_agents.sandbox as sandbox_module
+
+    real_loads = sandbox_module.json.loads
+
+    def pretend_cpu_limit_failed(payload):
+        message = real_loads(payload)
+        if message.get("status") == "ok":
+            message["unapplied"] = ["cpu_s"]
+        return message
+
+    monkeypatch.setattr(sandbox_module.json, "loads", pretend_cpu_limit_failed)
+    with pytest.raises(SandboxError, match="cpu_s"):
+        Subprocess(timeout_s=10).execute(echo, {"text": "hi"}, {})
+
+
+def test_limits_that_do_apply_leave_unapplied_empty():
+    # The normal path: nothing reported, so nothing discarded.
+    assert Subprocess(timeout_s=10).execute(echo, {"text": "hi"}, {}) == "hi"
 
 
 def test_the_parent_environment_is_not_inherited(box):

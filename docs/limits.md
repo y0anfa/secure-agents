@@ -47,9 +47,18 @@ underneath.
 ordinary `setrlimit` calls, so what they do depends on the kernel. On Linux
 all three apply. On macOS, `RLIMIT_AS` is not enforced, which means
 `memory_mb` does nothing there: a tool that allocates without bound will not
-be stopped. `setrlimit` failures are swallowed rather than raised, so a limit
-that the platform ignores looks exactly like one that is working. Treat
-`memory_mb` as a Linux control until that is fixed.
+be stopped. Treat it as a Linux control.
+
+The sandbox says so rather than leaving you to find out. `describe()` names
+an unenforced limit as unenforced, and that is the string the audit log
+carries, so a run never claims a cap it did not have:
+
+```
+subprocess(spawn), 512MB NOT ENFORCED on darwin, 10s cpu, ...
+```
+
+`Subprocess.unenforced` and `unenforced_limits(platform)` answer the same
+question in code, which is the thing to assert on if you care.
 
 ## The egress guard patches `socket`
 

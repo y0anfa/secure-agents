@@ -28,11 +28,14 @@ dependencies = []
 
 [project.optional-dependencies]
 anthropic = ["anthropic>=0.40"]
-dev = ["pytest>=8", "ruff>=0.6", "mypy>=1.11"]
+# The lint toolchain is pinned to a minor range. An unpinned ruff means a
+# release with a new rule or a new formatter target turns CI red on a branch
+# that changed nothing, which is how contributors learn to ignore CI.
+dev = ["pytest>=8", "ruff>=0.16,<0.17", "mypy>=1.11,<2"]
 
 [project.urls]
-Homepage = "https://github.com/OWNER/secure-agents"
-Issues = "https://github.com/OWNER/secure-agents/issues"
+Homepage = "https://github.com/y0anfa/secure-agents"
+Issues = "https://github.com/y0anfa/secure-agents/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/secure_agents"]
@@ -49,6 +52,13 @@ target-version = "py310"
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "S"]
 ignore = ["S101"]
+
+[tool.ruff.format]
+# Ruff formats Python inside Markdown fences. The snippets in README.md and
+# docs/API.md are illustrative: they line up trailing comments for reading and
+# some of them are deliberately elided, neither of which survives the
+# formatter. They are prose, so they are not its business.
+exclude = ["*.md"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["S", "B"]

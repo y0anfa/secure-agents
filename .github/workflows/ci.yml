@@ -37,18 +37,17 @@ jobs:
       - run: mypy
 
   test:
-    # Linux only for now. Adding a macOS leg to this job turned it red on all
-    # four Python versions: the sandbox's resource limits are enforced by the
-    # OS, and Darwin does not honour RLIMIT_AS, so memory_mb is a no-op there
-    # and the test asserting a greedy tool gets killed cannot pass. That is a
-    # real gap in the library rather than a CI problem, tracked separately,
-    # and widening the matrix is not this PR's job to resolve. The examples
-    # job below does run on macOS, so the sandbox is still exercised there.
+    # macOS matters here beyond the usual: the sandbox's limits are setrlimit
+    # calls, so what they do depends on the kernel, and Darwin accepts
+    # RLIMIT_AS and then ignores it. That difference is exactly the kind of
+    # thing a Linux-only matrix hides, and it is the reason unenforced_limits
+    # exists.
     strategy:
       fail-fast: false
       matrix:
+        os: [ubuntu-latest, macos-latest]
         python-version: ["3.10", "3.11", "3.12", "3.13"]
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
