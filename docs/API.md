@@ -130,6 +130,31 @@ module and a script that runs an agent needs
 `if __name__ == "__main__":`. `start_method="fork"` lifts both requirements
 and most of the isolation.
 
+### Limits that the platform will not enforce
+
+Not every rlimit works everywhere. Darwin accepts `RLIMIT_AS` and then ignores
+it, so `memory_mb` is a no-op on macOS; a platform with no `resource` module
+has none of them. A limit that silently does nothing is worse than no limit,
+because it reads as a control, so it is reported rather than claimed:
+
+```python
+from secure_agents import Subprocess, unenforced_limits
+
+unenforced_limits()          # for this platform, e.g. frozenset({"memory_mb"})
+unenforced_limits("darwin")  # ask about another one
+Subprocess().unenforced      # what this sandbox will not enforce
+Subprocess().describe()
+# "subprocess(spawn), 512MB NOT ENFORCED on darwin, 10s cpu, ..."
+```
+
+`describe()` is what the audit log records, so a run on macOS says it had no
+memory cap rather than claiming one it never had.
+
+Separately, a limit that *should* have applied on this platform and could not
+be set is fail-closed: the tool's result is discarded and `SandboxError` names
+the limit. Previously such a failure was swallowed and the run continued as if
+fully sandboxed.
+
 Implement `Sandbox` yourself for a real boundary:
 
 ```python

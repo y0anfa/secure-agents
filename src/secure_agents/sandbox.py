@@ -25,11 +25,20 @@ from __future__ import annotations
 import json
 import multiprocessing
 import os
+import sys
 from dataclasses import dataclass
 from typing import Any, Protocol
 
 from .errors import SandboxError, ToolError
 from .tools import Tool
+
+try:  # pragma: no cover - platform dependent
+    import resource
+
+    _HAS_RESOURCE = True
+except ImportError:  # pragma: no cover - Windows
+    resource = None  # type: ignore[assignment]
+    _HAS_RESOURCE = False
 
 DEFAULT_MEMORY_MB = 512
 DEFAULT_CPU_SECONDS = 10
@@ -37,6 +46,31 @@ DEFAULT_MAX_WRITE_MB = 64
 _RESULT_LIMIT = 256 * 1024
 """Tool results larger than this are truncated. A 40MB file read is not a
 useful tool result, it is a context-window denial of service."""
+
+LIMIT_NAMES = ("memory_mb", "cpu_s", "max_write_mb")
+
+_UNENFORCED_BY_PLATFORM: dict[str, frozenset[str]] = {
+    # Darwin accepts RLIMIT_AS and then ignores it: setrlimit returns success,
+    # getrlimit reads the value back, and the allocation still succeeds. No
+    # amount of checking inside the child can detect that, so it has to be
+    # known here.
+    "darwin": frozenset({"memory_mb"}),
+}
+
+
+def unenforced_limits(platform: str | None = None) -> frozenset[str]:
+    """Which limits this platform accepts and then does not enforce.
+
+    A limit that silently does nothing is worse than no limit, because it
+    reads as a control: it appears in :meth:`Subprocess.describe` and from
+    there in the audit log. Everything in this set is reported as unenforced
+    rather than claimed.
+    """
+    platform = platform or sys.platform
+    if not _HAS_RESOURCE:
+        # No rlimits at all. The timeout and the process boundary still apply.
+        return frozenset(LIMIT_NAMES)
+    return _UNENFORCED_BY_PLATFORM.get(platform, frozenset())
 
 
 # --------------------------------------------------------------------------
@@ -174,11 +208,33 @@ class Subprocess:
         self.env = env
         self.start_method = start_method
 
+    @property
+    def unenforced(self) -> frozenset[str]:
+        """Requested limits this platform will not enforce.
+
+        Inspect it rather than trusting the constructor arguments: on Darwin
+        ``memory_mb`` is accepted and ignored, and on a platform with no
+        ``resource`` module none of the rlimits apply.
+        """
+        return unenforced_limits()
+
     def describe(self) -> str:
-        return (
-            f"subprocess({self.start_method}), {self.memory_mb}MB, {self.cpu_s}s cpu, "
-            f"egress: {self.egress.describe()}"
-        )
+        """What this sandbox actually enforces, not what it was asked for.
+
+        This string goes into the audit log, so it names an unenforced limit
+        as unenforced. A run that claims a 512MB cap it never had is worse
+        than one that admits it had none.
+        """
+        unenforced = self.unenforced
+        parts = [f"subprocess({self.start_method})"]
+        for name, text in (
+            ("memory_mb", f"{self.memory_mb}MB"),
+            ("cpu_s", f"{self.cpu_s}s cpu"),
+            ("max_write_mb", f"{self.max_write_mb}MB writes"),
+        ):
+            parts.append(f"{text} NOT ENFORCED on {sys.platform}" if name in unenforced else text)
+        parts.append(f"egress: {self.egress.describe()}")
+        return ", ".join(parts)
 
     def execute(self, tool: Tool, args: dict[str, Any], secrets: dict[str, str]) -> Any:
         if self.start_method == "spawn" and tool.module == "__main__":
@@ -233,6 +289,16 @@ class Subprocess:
         # ever unpickled out here.
         message = json.loads(payload)
         if message["status"] == "ok":
+            # Fail closed: a limit we expected this platform to honour and
+            # could not set means the sandbox is not the one that was
+            # configured, so the result is not trusted.
+            unapplied = message.get("unapplied") or []
+            if unapplied:
+                raise SandboxError(
+                    f"{tool.name} ran without limits that were requested and expected to "
+                    f"apply here: {', '.join(unapplied)}. The result is discarded because "
+                    "the sandbox was not the one configured."
+                )
             return message["result"]
         if message["status"] == "egress":
             raise EgressDenied(message["error"])
@@ -282,7 +348,7 @@ def _child_main(
     try:
         os.environ.clear()
         os.environ.update(env)
-        _apply_limits(limits)
+        unapplied = _apply_limits(limits)
         _install_egress_guard(egress)
         module = __import__(module_name, fromlist=["*"])
         target: Any = module
@@ -295,7 +361,7 @@ def _child_main(
             kwargs["secrets"] = secrets
         result = _cap(fn(**kwargs))
         try:
-            payload = json.dumps({"status": "ok", "result": result})
+            payload = json.dumps({"status": "ok", "result": result, "unapplied": unapplied})
         except (TypeError, ValueError):
             payload = json.dumps(
                 {
@@ -332,26 +398,43 @@ def _child_main(
             pass
 
 
-def _apply_limits(limits: dict[str, int]) -> None:  # pragma: no cover - child only
-    try:
-        import resource
-    except ImportError:
-        return  # Windows: the timeout and process boundary still apply.
-    _set(resource.RLIMIT_CPU, limits["cpu_s"])
-    _set(resource.RLIMIT_AS, limits["memory_mb"] * 1024 * 1024)
-    _set(resource.RLIMIT_FSIZE, limits["max_write_mb"] * 1024 * 1024)
+def _apply_limits(limits: dict[str, int]) -> list[str]:  # pragma: no cover - child only
+    """Apply the rlimits, returning the names of any that could not be set.
+
+    Limits this platform is known not to enforce are skipped rather than
+    reported: they are already named as unenforced by
+    :func:`unenforced_limits`, and failing the run over a documented platform
+    gap would just make the sandbox unusable there. What is reported is a
+    limit that should have worked and did not, which previously vanished into
+    a bare ``except``.
+    """
+    if not _HAS_RESOURCE:
+        return []
+    skip = unenforced_limits()
+    requested = (
+        ("cpu_s", resource.RLIMIT_CPU, limits["cpu_s"]),
+        ("memory_mb", resource.RLIMIT_AS, limits["memory_mb"] * 1024 * 1024),
+        ("max_write_mb", resource.RLIMIT_FSIZE, limits["max_write_mb"] * 1024 * 1024),
+    )
+    unapplied = [
+        name for name, which, value in requested if name not in skip and not _set(which, value)
+    ]
     _set(resource.RLIMIT_CORE, 0)
+    return unapplied
 
 
-def _set(which: int, limit: int) -> None:  # pragma: no cover - child only
-    import resource
-
+def _set(which: int, limit: int) -> bool:  # pragma: no cover - child only
+    """Set one rlimit. Returns whether it is now in force."""
     try:
         soft, hard = resource.getrlimit(which)
         ceiling = limit if hard == resource.RLIM_INFINITY else min(limit, hard)
         resource.setrlimit(which, (ceiling, hard))
     except (ValueError, OSError):
-        pass
+        return False
+    # Read back: a platform that quietly clamps is not one to take on trust.
+    # This cannot catch a limit the kernel accepts and then ignores, which is
+    # why unenforced_limits() exists as well.
+    return resource.getrlimit(which)[0] == ceiling
 
 
 def _install_egress_guard(egress: Egress) -> None:  # pragma: no cover - child only
