@@ -44,13 +44,21 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Core must install with nothing else
+      - name: The core must declare no runtime dependencies
         run: |
           pip install .
-          pip list --format=freeze --not-required | grep -v '^secure-agents' > extra.txt || true
-          if [ -s extra.txt ]; then
-            echo "secure-agents pulled in runtime dependencies:"; cat extra.txt; exit 1
-          fi
+          python - <<'PY'
+          from importlib.metadata import requires
+
+          # Read the installed distribution's own metadata rather than the
+          # environment: every runner ships pip and setuptools, and asking what
+          # is installed answers a different question from what we require.
+          declared = requires("secure-agents") or []
+          core = [r for r in declared if "extra ==" not in r]
+          if core:
+              raise SystemExit("secure-agents declares runtime dependencies: " + ", ".join(core))
+          print(f"core has no runtime dependencies ({len(declared)} optional, all behind extras)")
+          PY
 
   examples:
     # The examples are the first thing a stranger runs. An example that does
