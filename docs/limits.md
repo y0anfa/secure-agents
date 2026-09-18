@@ -62,6 +62,12 @@ It does not stop code that deliberately evades it: raw syscalls, `ctypes`, a
 subprocess of its own. For an enforceable boundary, use a network namespace
 or an egress proxy outside the process, and treat this as the second layer.
 
+The threat model puts it as a rule rather than a caveat: **egress policy is
+advisory below the `container` isolation tier** (§7.5). `Subprocess` is below
+that tier. A default install does not enforce egress, it declares it, and the
+declaration is only as good as the tool's willingness to go through the
+socket module.
+
 ## The audit log is tamper-evident, not tamper-proof
 
 `JsonlAudit` hash-chains records, so a deleted or edited line is detectable

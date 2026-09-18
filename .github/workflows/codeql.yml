@@ -15,7 +15,12 @@ jobs:
   analyze:
     runs-on: ubuntu-latest
     permissions:
+      # A job-level permissions block replaces the workflow-level one rather
+      # than adding to it, so contents: read has to be repeated here or
+      # actions/checkout cannot read the repository.
+      contents: read
       security-events: write
+      actions: read
     steps:
       # TODO before 0.1.0: pin to a full commit SHA.
       - uses: actions/checkout@v4
