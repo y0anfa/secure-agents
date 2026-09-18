@@ -31,6 +31,27 @@ invariants in section 6 is rejected rather than debated.
 change means the library stops something, there is a test asserting it stops,
 and if it is user-facing, an example demonstrating it.
 
+## Do not trim the test matrix
+
+`pytest` runs on Linux and macOS, four Python versions each. That looks like
+more than a small library needs, and the macOS half is the half to leave
+alone.
+
+The sandbox's limits are `setrlimit` calls, so what they actually do is a
+property of the kernel rather than of this code. Darwin accepts `RLIMIT_AS`
+and then ignores it, which meant `memory_mb` silently did nothing on macOS
+while `Subprocess.describe()` reported a cap into the audit log. A
+Linux-only matrix cannot catch that class of bug, structurally, no matter
+how many tests it runs.
+
+Two tests are platform-sensitive and worth knowing about before you move
+them: `test_a_greedy_tool_hits_the_memory_limit` skips where the limit is
+unenforced, and `test_fork_allows_tools_defined_in_main` uses
+`start_method="fork"`, which is the classic macOS crash case when the parent
+process is multi-threaded. It currently runs before the tests that start an
+HTTP server thread. If you reorder that file, or add parallel test
+execution, that is the one that breaks.
+
 ## Docs and examples
 
 The examples are executable documentation. `pytest examples` runs them, and
