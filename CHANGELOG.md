@@ -9,6 +9,27 @@ here.
 
 ## [Unreleased]
 
+### Added
+
+- A `Publish` workflow that releases to PyPI with Trusted Publishing, so there
+  is no long-lived API token in this repository. It runs only when a GitHub
+  release is published, and refuses to build if the tag and the version in
+  `pyproject.toml` disagree.
+- A CycloneDX SBOM and a GitHub build provenance attestation, produced by that
+  workflow and attached to the release. The SBOM is generated from a clean
+  environment holding only the built wheel, so for the core it is empty, which
+  is the dependency-free claim in a form that can be checked rather than read.
+- `docs/releasing.md`, including the PyPI and GitHub environment setup, which
+  has to be done once by the account that will own the project.
+- `py.typed`. The package is fully typed and mypy already checks it, but
+  without the marker every downstream user saw `Any`.
+
+### Changed
+
+- Packaging metadata now uses a PEP 639 license expression (`Apache-2.0`) and
+  ships `LICENSE` in the wheel. The deprecated `License ::` classifier is gone,
+  because PyPI rejects metadata that carries both.
+
 ### Notes
 
 - CodeQL is configured but skipped while the repository is private, because
