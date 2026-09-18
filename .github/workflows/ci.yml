@@ -5,27 +5,19 @@ on:
     branches: [main]
   pull_request:
 
+# Read-only by default. A job that needs more asks for it itself.
 permissions:
   contents: read
 
-jobs:
-  test:
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: ["3.10", "3.11", "3.12", "3.13"]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
-      - run: pip install -e '.[dev]'
-      - run: pytest
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
+jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
+      # TODO before 0.1.0: pin every action to a full commit SHA, not a tag.
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
@@ -33,36 +25,59 @@ jobs:
       - run: pip install -e '.[dev]'
       - run: ruff check .
       - run: ruff format --check .
-      - run: mypy
 
-  dependencies:
-    # The core is meant to have no runtime dependencies. If that changes it
-    # should be a decision someone makes, not a line that slips into a PR.
+  types:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: The core must declare no runtime dependencies
-        run: |
-          pip install .
-          python - <<'PY'
-          from importlib.metadata import requires
+      - run: pip install -e '.[dev]'
+      - run: mypy
 
-          # Read the installed distribution's own metadata rather than the
-          # environment: every runner ships pip and setuptools, and asking what
-          # is installed answers a different question from what we require.
-          declared = requires("secure-agents") or []
-          core = [r for r in declared if "extra ==" not in r]
-          if core:
-              raise SystemExit("secure-agents declares runtime dependencies: " + ", ".join(core))
-          print(f"core has no runtime dependencies ({len(declared)} optional, all behind extras)")
-          PY
+  test:
+    # macOS matters here beyond the usual: the sandbox's limits are setrlimit
+    # calls, so what they do depends on the kernel, and Darwin accepts
+    # RLIMIT_AS and then ignores it. That difference is exactly the kind of
+    # thing a Linux-only matrix hides, and it is the reason unenforced_limits
+    # exists.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: pip install -e '.[dev]'
+      - run: pytest -q
 
   examples:
-    # The examples are the first thing a stranger runs. An example that does
-    # not run is worse than no example.
+    # The examples are the security claims the READMEs make. Their tests
+    # assert that each attack is actually stopped, so this job failing means
+    # the documentation has started lying.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e '.[dev]'
+      - run: pytest examples -q
+      - name: The quickstart in the README still runs
+        run: python examples/quickstart.py
+
+  dependencies:
+    # The core claims to have no dependencies. Check it, rather than trusting
+    # that nobody added one.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -70,5 +85,13 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -e .
-      - run: PYTHONPATH=examples python examples/01_quickstart.py
-      - run: PYTHONPATH=examples python examples/02_injection.py
+      - name: Nothing but secure-agents and pip's own machinery
+        run: |
+          python - <<'PY'
+          import importlib.metadata as md
+          deps = md.requires("secure-agents") or []
+          runtime = [d for d in deps if "extra ==" not in d]
+          if runtime:
+              raise SystemExit(f"the core gained runtime dependencies: {runtime}")
+          print("core is dependency-free")
+          PY

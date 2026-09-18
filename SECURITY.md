@@ -1,35 +1,60 @@
-# Reporting a vulnerability
+# Security policy
 
-Please report security issues privately through GitHub's
-[private vulnerability reporting](https://github.com/y0anfa/secure-agents/security/advisories/new)
-rather than in a public issue.
+## Reporting a vulnerability
 
-Include what you tried, what happened, and which invariant from the
-[threat model](docs/THREAT_MODEL.md) you believe it breaks. A working proof of
-concept against a checked-out copy is ideal.
+Report privately through
+[GitHub Security Advisories](https://github.com/y0anfa/secure-agents/security/advisories/new).
+Please do not open a public issue for a suspected vulnerability.
 
-## What counts
+We aim to acknowledge within **3 working days** and to give an initial
+assessment, with a fix or a timeline, within **10 working days**. If you have
+not heard back in that window, escalate by opening a public issue that says
+only that you are waiting on a security report, with no details.
 
-A finding is in scope if it breaks one of the threat model's invariants. In
-particular:
+Coordinated disclosure, 90 days by default, shorter if a fix ships sooner and
+longer only by agreement.
 
-- a tool call that executes without a matching policy decision
-- a model-produced value reaching a shell, a path, or a URL without its check
-- a secret value appearing in the context window, a tool argument, or a log
-- an audit record that is missing, or that follows the effect it describes
-- a sandboxed tool reaching a host outside its egress allowlist, by any route
-  that does not require native code
-- a tool set that completes the lethal trifecta and still constructs
+## What counts as a vulnerability here
 
-## What does not
+This library sits between a model and a set of tools. That makes the scope
+question sharper than usual, so it is worth being explicit.
 
-- A model following injected instructions. That is assumed, not defended
-  against; see the README. The finding is what the model could then *reach*.
-- Escaping `Subprocess` using `ctypes`, a native extension, or anything else
-  inside the process. `Subprocess` is documented as a blast-radius reducer,
-  not a boundary. If you can escape a `Sandbox` implementation that claims to
-  be a boundary, that is very much in scope.
-- Anything requiring the deployer to have written a policy that allows it.
+**In scope.** Anything where the SDK's own mechanism fails to do what it
+says:
 
-We will acknowledge within a few working days and aim to have a fix or a
-public position within thirty.
+- A tool call that runs despite a policy that should have denied it
+- An argument predicate that can be bypassed: a path escaping `under()`, a
+  host escaping `host_in()`, a schema check that lets an undeclared argument
+  through
+- Untrusted content that fails to taint the context, so an escalation that
+  should have happened did not
+- A secret reaching the model's context despite being declared
+- An audit chain that verifies after a record was changed or removed
+- Escaping `Subprocess` by a route the resource limits and the minimal
+  environment were meant to close
+- Any crash reachable from tool arguments the model controls
+
+**Not in scope.** The model behaving badly is the condition this library is
+built for, not a defect in it:
+
+- The model being persuaded to attempt a call that policy then denies. That
+  is the system working.
+- A successful prompt injection as such. We do not detect injection and do
+  not claim to.
+- A policy that is too permissive because of how it was written. If the rule
+  said `allow("read_file")`, that is what it granted.
+- A tool implementation that ignores its own arguments, or leaks a secret it
+  derived. Tools are your code.
+- Evading the egress guard with `ctypes`, raw syscalls or a child process.
+  It patches `socket` and is documented as defence in depth, not a boundary.
+- Escaping `InProcess`, which is documented as no isolation at all.
+- Anything in [docs/limits.md](docs/limits.md) under "Not addressed at all".
+
+If you are unsure which side of that line something falls on, report it. A
+report that turns out to be in the second list is still useful, because it
+usually means the documentation was not clear enough.
+
+## Supported versions
+
+Pre-1.0: only the latest release. Fixes go into a new patch release, with an
+advisory naming the affected versions.

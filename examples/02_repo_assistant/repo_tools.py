@@ -53,7 +53,7 @@ OUTSIDE = (Path(__file__).parent / "outside_the_checkout").resolve()
 PLANTED_SYMLINK = WORKSPACE / "notes.txt"
 
 
-def ensure_fixtures() -> None:
+def ensure_fixtures() -> bool:
     """Plant a symlink inside the checkout that points out of it.
 
     Created at runtime rather than committed, so the example behaves the same
@@ -61,6 +61,13 @@ def ensure_fixtures() -> None:
     ``under()`` predicate exists for: the path string starts with the
     workspace prefix, and a naive check would pass it.
     """
-    if not PLANTED_SYMLINK.is_symlink():
+    if PLANTED_SYMLINK.is_symlink():
+        return True
+    try:
         PLANTED_SYMLINK.unlink(missing_ok=True)
         PLANTED_SYMLINK.symlink_to(OUTSIDE / "secret.txt")
+    except OSError:
+        # Some filesystems have no symlinks. The rest of the example still
+        # demonstrates ordinary traversal and the command allowlist.
+        return False
+    return True

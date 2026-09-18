@@ -1,0 +1,38 @@
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    # Catches newly published advisories against code nobody has touched.
+    - cron: "17 4 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    # Code scanning needs GitHub Advanced Security on a private repository,
+    # and secure-agents is private until it is published, so uploading
+    # results fails with a 403 rather than a finding. Gating on visibility
+    # means this starts working by itself the day the repo goes public,
+    # instead of someone having to remember. A missing context skips the job,
+    # so the guard can never turn CI red.
+    if: github.event.repository.visibility == 'public'
+    runs-on: ubuntu-latest
+    permissions:
+      # A job-level permissions block replaces the workflow-level one rather
+      # than adding to it, so contents: read has to be repeated here or
+      # actions/checkout cannot read the repository.
+      contents: read
+      security-events: write
+      actions: read
+    steps:
+      # TODO before 0.1.0: pin to a full commit SHA.
+      - uses: actions/checkout@v4
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: python
+          queries: security-extended
+      - uses: github/codeql-action/analyze@v3
