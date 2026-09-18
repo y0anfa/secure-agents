@@ -60,6 +60,12 @@ subprocess(spawn), 512MB NOT ENFORCED on darwin, 10s cpu, ...
 `Subprocess.unenforced` and `unenforced_limits(platform)` answer the same
 question in code, which is the thing to assert on if you care.
 
+The two cases are kept apart deliberately. A limit this platform is known not
+to honour is reported and the run continues. A limit that should have applied
+here and did not is treated as a broken sandbox rather than a smaller one:
+the tool's result is discarded and `SandboxError` names the limits that went
+unapplied.
+
 ## The egress guard patches `socket`
 
 `Egress.allow(...)` works by wrapping `socket.getaddrinfo` and
