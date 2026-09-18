@@ -47,7 +47,7 @@ from .errors import (
 from .models import AnthropicModel, Model, ModelResponse, ScriptedModel, ToolUse
 from .policy import Decision, Policy, Rule, ToolCall, Verdict, all_of, any_of, arg, not_, tainted
 from .provenance import Provenance, Source, Trust
-from .sandbox import Egress, InProcess, Sandbox, Subprocess
+from .sandbox import Egress, InProcess, Sandbox, Subprocess, unenforced_limits
 from .secrets import Secret
 from .tools import EFFECTS, EXPOSURES, Tool, ToolSpec, tool
 from .trifecta import SecurityConfigError, Trifecta, find_trifecta
@@ -106,5 +106,6 @@ __all__ = [
     "not_",
     "tainted",
     "tool",
+    "unenforced_limits",
     "verify_chain",
 ]
