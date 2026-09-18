@@ -43,6 +43,14 @@ namespace, seccomp filter or user separation. Code that wants out can get
 out. If you are running code you did not write, put a real sandbox
 underneath.
 
+**The limits are only as good as the platform underneath them.** They are
+ordinary `setrlimit` calls, so what they do depends on the kernel. On Linux
+all three apply. On macOS, `RLIMIT_AS` is not enforced, which means
+`memory_mb` does nothing there: a tool that allocates without bound will not
+be stopped. `setrlimit` failures are swallowed rather than raised, so a limit
+that the platform ignores looks exactly like one that is working. Treat
+`memory_mb` as a Linux control until that is fixed.
+
 ## The egress guard patches `socket`
 
 `Egress.allow(...)` works by wrapping `socket.getaddrinfo` and

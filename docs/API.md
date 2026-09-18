@@ -61,14 +61,15 @@ A predicate that raises produces `DENY`, not a fall-through to a later rule.
 ### From config
 
 ```python
-Policy.from_dict({
-  "default": "deny",
-  "rules": [
-    {"tools": "read_*", "decision": "allow",
-     "when": {"arg": "path", "under": "/srv/data"}},
-    {"tools": "*", "decision": "ask", "effects": ["send"]},
-  ],
-})
+Policy.from_dict(
+    {
+        "default": "deny",
+        "rules": [
+            {"tools": "read_*", "decision": "allow", "when": {"arg": "path", "under": "/srv/data"}},
+            {"tools": "*", "decision": "ask", "effects": ["send"]},
+        ],
+    }
+)
 ```
 
 Config predicates: `under`, `equals`, `in`, `matches`, `host_in`, `max_len`.
@@ -76,9 +77,9 @@ Config predicates: `under`, `equals`, `in`, `matches`, `host_in`, `max_len`.
 ### Introspection
 
 ```python
-policy.describe()                  # the rules as readable lines
-policy.decide(call, spec)          # -> Verdict(decision, reason, rule, escalated)
-policy.may_ask(specs)              # does this policy need an approver?
+policy.describe()  # the rules as readable lines
+policy.decide(call, spec)  # -> Verdict(decision, reason, rule, escalated)
+policy.may_ask(specs)  # does this policy need an approver?
 policy.can_allow_when_tainted(spec)  # static, over-approximating
 ```
 
@@ -146,8 +147,8 @@ Return something JSON-serializable.
 ```python
 Trust.TRUSTED | Trust.USER | Trust.UNTRUSTED
 Provenance.from_user().with_source(Source(Trust.UNTRUSTED, "tool:fetch"))
-provenance.tainted        # bool
-provenance.describe()     # "tainted by tool:fetch"
+provenance.tainted  # bool
+provenance.describe()  # "tainted by tool:fetch"
 ```
 
 Calls made in the same step share the provenance the step started with: the
@@ -157,9 +158,9 @@ influenced by them. Taint applies from the next step.
 ## Secrets
 
 ```python
-Secret("GITHUB_TOKEN")            # a handle
-Secret("X", provider=my_lookup)   # anything callable taking a name
-secret.reveal()                   # the value; str(secret) raises
+Secret("GITHUB_TOKEN")  # a handle
+Secret("X", provider=my_lookup)  # anything callable taking a name
+secret.reveal()  # the value; str(secret) raises
 ```
 
 ## Audit
