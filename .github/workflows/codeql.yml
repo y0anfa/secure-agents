@@ -13,6 +13,13 @@ permissions:
 
 jobs:
   analyze:
+    # Code scanning needs GitHub Advanced Security on a private repository,
+    # and secure-agents is private until it is published, so uploading
+    # results fails with a 403 rather than a finding. Gating on visibility
+    # means this starts working by itself the day the repo goes public,
+    # instead of someone having to remember. A missing context skips the job,
+    # so the guard can never turn CI red.
+    if: github.event.repository.visibility == 'public'
     runs-on: ubuntu-latest
     permissions:
       # A job-level permissions block replaces the workflow-level one rather

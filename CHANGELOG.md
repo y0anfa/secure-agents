@@ -9,6 +9,13 @@ here.
 
 ## [Unreleased]
 
+### Notes
+
+- CodeQL is configured but skipped while the repository is private, because
+  code scanning on a private repository needs GitHub Advanced Security. The
+  workflow is gated on repository visibility and starts running by itself
+  when the repo is published.
+
 ## [0.1.0]
 
 First release. The API will change; the version number is meant literally.
