@@ -72,17 +72,28 @@ Dependabot proposes these updates weekly and rewrites the trailing comment
 along with the SHA, so pinning does not mean going stale. Do not replace a
 SHA with a tag to make an update easier to read.
 
-If you ever resolve one by hand, ask for the commit and not the tag object:
+If you ever resolve one by hand, ask for the commit and not the tag object.
+List both forms and take whichever the repository actually has:
 
 ```
-git ls-remote --tags https://github.com/github/codeql-action 'refs/tags/v3^{}'
+git ls-remote --tags https://github.com/github/codeql-action 'refs/tags/v3.38.1*'
+e429ea58a9912cadc53f8132ad35562b54de1b30    refs/tags/v3.38.1
+3ea06614dafe36dec890db3446326e0d40ce53d4    refs/tags/v3.38.1^{}
 ```
 
-`github/codeql-action` uses annotated tags, so plain `refs/tags/v3` gives you
-the tag object's SHA. Pinning to that fails at run time with an unresolvable
-action, and the SHA looks entirely correct while it does. `actions/checkout`
-and `actions/setup-python` use lightweight tags, where both forms agree,
-which is what makes the difference easy to miss.
+When a `^{}` line is there, it is the commit and the other line is the tag
+object. `github/codeql-action` and `pypa/gh-action-pypi-publish` use annotated
+tags and have one; `actions/checkout` and `actions/setup-python` use
+lightweight tags and do not, so for those the plain line is already the
+commit. Pinning to a tag object fails at run time with an unresolvable action,
+and the SHA looks entirely correct while it does.
+
+Two ways to get this wrong that both look fine:
+
+- `--refs` strips the `^{}` lines. It makes the output tidy and, for an
+  annotated tag, hands you the wrong SHA with nothing to indicate it.
+- Asking only for `'refs/tags/vX^{}'` returns nothing at all for a lightweight
+  tag, which reads like the tag does not exist.
 
 ## Docs and examples
 
@@ -106,3 +117,10 @@ pytest examples
 
 Commits explain why, not what; the diff covers what. No generated files by
 hand: regenerate with the tooling.
+
+## Releasing
+
+You almost certainly do not need this, but if you are wondering why there is no
+PyPI token in the repository settings: there is not meant to be one. Releases go
+out through Trusted Publishing, from a tag, and the setup is written down in
+[docs/releasing.md](docs/releasing.md).

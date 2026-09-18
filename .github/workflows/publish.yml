@@ -1,0 +1,166 @@
+name: Publish
+
+# Publishing is not a side effect of merging. A release is a deliberate human
+# act: tag it, write the notes, press publish. This workflow then builds what
+# the tag points at and nothing else.
+#
+# The rehearsal path is workflow_dispatch, which publishes to TestPyPI. Run it
+# once before the first real release, because a Trusted Publishing setup that
+# is wrong fails at the last step, and finding that out on the real index
+# burns the version number.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Rehearsal only. The real index is reached by publishing a release."
+        required: true
+        default: testpypi
+        type: choice
+        options:
+          - testpypi
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+
+      - name: The tag and the version in pyproject.toml have to agree
+        if: github.event_name == 'release'
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          python - <<'PY'
+          import os, tomllib
+
+          tag = os.environ["RELEASE_TAG"].lstrip("v")
+          with open("pyproject.toml", "rb") as handle:
+              version = tomllib.load(handle)["project"]["version"]
+          if tag != version:
+              raise SystemExit(
+                  f"the release is tagged {tag!r} but pyproject.toml says {version!r}; "
+                  "PyPI will not let that version number be reused, so stop here"
+              )
+          print(f"tag and version agree on {version}")
+          PY
+
+      - run: pip install build twine
+      - run: python -m build
+
+      - name: The wheel installs on its own, and the SBOM records what came with it
+        # The environment is built with --without-pip and has only the wheel
+        # installed into it, so the SBOM describes what a user gets and not
+        # what the build machine happened to have lying around. It is an
+        # install smoke test at the same time.
+        #
+        # For this project the interesting line is the component count: the
+        # core claims no dependencies, and an SBOM with nothing in it is that
+        # claim in a form a procurement reviewer can read.
+        run: |
+          mkdir -p sbom
+          python -m venv --without-pip /tmp/sbom-env
+          pip --python /tmp/sbom-env/bin/python install dist/*.whl
+          /tmp/sbom-env/bin/python -c "import secure_agents; print('import ok:', secure_agents.__file__)"
+          pip install cyclonedx-bom
+          cyclonedx-py environment /tmp/sbom-env \
+            --of JSON \
+            --mc-type library \
+            --pyproject pyproject.toml \
+            --output-reproducible \
+            -o sbom/secure-agents.cdx.json
+          python -c "import json; print(len(json.load(open('sbom/secure-agents.cdx.json')).get('components', [])), 'dependencies in the SBOM')"
+
+      - run: twine check dist/*
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: dist
+          path: dist/
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: sbom
+          path: sbom/
+
+  testpypi:
+    # The rehearsal. Same path, different index.
+    needs: build
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    environment:
+      name: testpypi
+      url: https://test.pypi.org/p/secure-agents
+    permissions:
+      # A job-level permissions block replaces the workflow-level one rather
+      # than adding to it, so every job here states everything it needs.
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
+        with:
+          repository-url: https://test.pypi.org/legacy/
+
+  pypi:
+    needs: build
+    if: github.event_name == 'release'
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/secure-agents
+    permissions:
+      contents: read
+      # Trusted Publishing means the OIDC token is the credential. There is no
+      # PyPI API token in this repository's secrets, so there is not one to
+      # leak, scope wrong, or forget to rotate.
+      id-token: write
+      # The build provenance attestation is signed with the same identity and
+      # says which workflow, at which commit, produced these exact files.
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: dist
+          path: dist/
+      # From v4 this is a thin wrapper over actions/attest. The wrapper is the
+      # right level here: the predicate we want is exactly build provenance.
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: "dist/*"
+      # Of every pin in this repository this is the one that matters most: it
+      # is the step that holds the publishing identity, so a moved tag here
+      # buys an attacker a release rather than a build. It is also the pin
+      # that most needs to stay current, because attestation behaviour changes
+      # between releases of this action. Dependabot covers both.
+      - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
+
+  attach-sbom:
+    # Its own job, with contents: write and nothing else. The job that can
+    # write to the repository is not the job that holds the publishing
+    # identity.
+    needs: pypi
+    if: github.event_name == 'release'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: sbom
+          path: sbom/
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: gh release upload "$RELEASE_TAG" sbom/secure-agents.cdx.json --clobber --repo "$GITHUB_REPOSITORY"
